@@ -1,147 +1,59 @@
 <template lang="pug">
-.markets
-  .table-intro
-    el-radio-group.radio-chain-select.custom-radio(
-      v-model='markets_active_tab',
-      size='small'
-    ).mr-3
-      el-radio-button(label='fav')
-        i.el-icon-star-on
-        span Fav
+no-ssr
+  .markets
+    market-top(v-if="!isMobile" :newListings="newListings", :topGainers="topGainers", :topVolume="topVolume")
+    .table-intro
+      el-radio-group.radio-chain-select.custom-radio(
+        v-model='markets_active_tab',
+        size='small'
+      ).mr-3
+        el-radio-button(label='fav')
+          i.el-icon-star-on
+          span {{ $t('Fav') }}
 
-      el-radio-button(label='all')
-        span All
+        el-radio-button(label='all')
+          span {{ $t('All') }}
 
-      el-radio-button(:label='network.baseToken.symbol')
-        span {{ network.baseToken.symbol }}
+        el-radio-button(:label='network.baseToken.symbol')
+          span {{ network.baseToken.symbol }}
 
-      el-radio-button(v-if='network.name == "eos"', label='USDT')
-        span USDT
+        el-radio-button(label="USD")
+          span USD
 
-      el-radio-button(value='cross-chain', label='Cross-Chain')
-        span Cross-Chain
+        el-radio-button(value='cross-chain', label='Cross-Chain')
+          span {{ $t('Cross-Chain') }}
 
-      el-radio-button(value='terraformers', label='Terraformers' v-if="network.name == 'wax'")
-        span  Terraformers
+      .search-container
+        el-input(
+          v-model='search',
+          :placeholder='$t("Search market")',
+          size='small',
+          prefix-icon='el-icon-search'
+          clearable
+        )
 
-    .search-container
-      el-input(
-        v-model='search',
-        placeholder='Search market',
-        size='small',
-        prefix-icon='el-icon-search'
-        clearable
-      )
+      el-switch(v-if="markets_active_tab == network.baseToken.symbol" v-model='showVolumeInUSD' active-text='USD').ml-auto
 
-    el-switch(v-if="markets_active_tab == network.baseToken.symbol" v-model='showVolumeInUSD' active-text='USD').ml-auto
+      .ml-auto(v-if="!isMobile")
+        nuxt-link(:to="localePath('new_market', $i18n.locale)")
+          el-button(tag="el-button" size="small" icon="el-icon-circle-plus-outline") {{ $t('Open new market') }}
 
-    .ml-auto
-      nuxt-link(to="new_market")
-        el-button(tag="el-button" size="small" icon="el-icon-circle-plus-outline") Open new market
-
-  .table.el-card.is-always-shadow
-    el-table.market-table(
-      :data='filteredMarkets',
-      style='width: 100%',
-      @row-click='clickOrder',
-      :default-sort='{ prop: "weekVolume", order: "descending" }'
-    )
-      el-table-column(label='Pair', prop='date', :width='isMobile ? 150 : 280')
-        template(slot-scope='scope')
-          TokenImage(
-            :src='$tokenLogo(scope.row.quote_token.symbol.name, scope.row.quote_token.contract)',
-            :height="isMobile? '20' : '30'"
-          )
-
-          //span TODO
-          //  PairIcons(
-          //    :token1="{symbol: scope.row.quote_token.symbol.name, contract: scope.row.quote_token.contract}"
-          //    :token2="{symbol: scope.row.base_token.symbol.name, contract: scope.row.base_token.contract}"
-          //  )
-
-          span.ml-2
-            | {{ scope.row.quote_token.symbol.name }}
-            span.text-muted.ml-2(v-if='!isMobile') {{ scope.row.quote_token.contract }}
-            |  / {{ scope.row.base_token.symbol.name }}
-
-      el-table-column(
-        :label='`Last price`',
-        sort-by='last_price',
-        align='right',
-        header-align='right',
-        sortable,
-        :sort-orders='["descending", null]'
-      )
-        template(slot-scope='scope')
-          .text-success(v-if="showVolumeInUSD && markets_active_tab == network.baseToken.symbol") ${{ $systemToUSD(scope.row.last_price, 8) }}
-          .text-success(v-else) {{ scope.row.last_price }} {{ !isMobile ? scope.row.base_token.symbol.name : "" }}
-      el-table-column(
-        :label='`24H Vol.`',
-        align='right',
-        header-align='right',
-        sortable,
-        sort-by='volume24',
-        :sort-orders='["descending", null]'
-        v-if='!isMobile'
-      )
-        template(slot-scope='scope')
-          span.text-mutted(v-if="showVolumeInUSD && markets_active_tab == network.baseToken.symbol") ${{ $systemToUSD(scope.row.volume24) }}
-          span.text-mutted(v-else) {{ scope.row.volume24.toFixed(2) | commaFloat }} {{ scope.row.base_token.symbol.name }}
-
-      el-table-column(
-        label='24H',
-        prop='name',
-        align='right',
-        header-align='right',
-        sortable,
-        width='100',
-        sort-by='change24',
-        :sort-orders='["descending", null]',
-        v-if='!isMobile'
-      )
-        template(slot-scope='scope', align='right', header-align='right')
-          change-percent(:change='scope.row.change24')
-
-      el-table-column(
-        label='7D Volume',
-        prop='weekVolume',
-        align='right',
-        header-align='right',
-        sortable,
-        sort-by='volumeWeek',
-        :sort-orders='["descending", null]',
-      )
-        template(slot-scope='scope')
-          span.text-mutted(v-if="showVolumeInUSD && markets_active_tab == network.baseToken.symbol") ${{ $systemToUSD(scope.row.volumeWeek) }}
-          span.text-mutted(v-else) {{ scope.row.volumeWeek.toFixed(2) | commaFloat }} {{ scope.row.base_token.symbol.name }}
-
-      el-table-column(
-        label='7D Change',
-        prop='weekChange',
-        align='right',
-        header-align='right',
-        sortable,
-        sort-by='changeWeek',
-        :sort-orders='["descending", null]',
-        v-if='!isMobile'
-      )
-        template(slot-scope='scope')
-          change-percent(:change='scope.row.changeWeek')
+    virtual-table(:table="virtualTableData")
+      template(#row="{ item }")
+        market-row(:item="item" :showVolumeInUSD="showVolumeInUSD" :marketsActiveTab="markets_active_tab")
 </template>
 
 <script>
-import { captureException } from '@sentry/browser'
-
-import { mapGetters, mapState } from 'vuex'
-import TokenImage from '~/components/elements/TokenImage'
-import ChangePercent from '~/components/trade/ChangePercent'
-import PairIcons from '~/components/PairIcons'
+import { mapState } from 'vuex'
+import VirtualTable from '~/components/VirtualTable'
+import MarketRow from '~/components/MarketRow'
+import MarketTop from '~/components/MarketTop'
 
 export default {
   components: {
-    TokenImage,
-    ChangePercent,
-    PairIcons
+    VirtualTable,
+    MarketRow,
+    MarketTop
   },
 
   async fetch({ store, error }) {
@@ -149,7 +61,6 @@ export default {
       try {
         await store.dispatch('loadMarkets')
       } catch (e) {
-        captureException(e)
         return error({ message: e, statusCode: 500 })
       }
     }
@@ -158,26 +69,18 @@ export default {
   data() {
     return {
       search: '',
-
-      to_assets: [],
-      select: {
-        from: '',
-        to: ''
-      },
-
-      loading: true
     }
   },
 
   computed: {
     ...mapState(['network']),
-    ...mapGetters(['user']),
     ...mapState(['markets']),
     ...mapState('settings', ['favMarkets']),
 
     markets_active_tab: {
       get() {
-        return this.$store.state.market.markets_active_tab || this.network.baseToken.symbol
+        const def = this.network.name == 'proton' ? 'all' : this.network.baseToken.symbol
+        return this.$store.state.market.markets_active_tab || def
       },
 
       set(value) {
@@ -195,52 +98,172 @@ export default {
       }
     },
 
+    newListings() {
+      return this.markets.slice(-3)
+    },
+
+    topGainers() {
+      const tmp = [...this.markets]
+      return tmp
+        .filter(i => i.base_token.contract == this.network.baseToken.contract)
+        .sort((a, b) => b.volumeWeek - a.volumeWeek)
+        .slice(0, 50)
+        .sort((a, b) => b.change24 - a.change24)
+        .slice(0, 3)
+    },
+
+    topVolume() {
+      const tmp = [...this.markets]
+      return tmp
+        .filter(i => i.base_token.contract == this.network.baseToken.contract)
+        .sort((a, b) => b.volume24 - a.volume24)
+        .slice(0, 3)
+    },
+
+    virtualTableData() {
+      const header = [
+        {
+          label: 'Pair',
+          value: 'quote_name',
+          width: '335px',
+          sortable: true
+        },
+        {
+          label: 'Last price',
+          value: 'last_price',
+          width: '165px',
+          sortable: true
+        },
+        {
+          label: '24H Vol.',
+          value: 'volume24',
+          width: '190px',
+          sortable: true,
+          desktopOnly: true
+        },
+        {
+          label: '24H',
+          value: 'change24',
+          width: '100px',
+          sortable: true,
+          desktopOnly: true
+        },
+        {
+          label: '7D Volume',
+          value: 'volume_week',
+          width: '190px',
+          sortable: true
+        },
+        {
+          label: '7D Change',
+          value: 'change_week',
+          width: '100px',
+          sortable: true,
+          desktopOnly: true
+        }
+      ]
+
+      const data = this.filteredMarkets.map(market => ({
+        id: market.id,
+        slug: market.slug,
+        quote_name: market.quote_token.symbol.name,
+        contract: market.quote_token.contract,
+        base_name: market.base_token.symbol.name,
+        base_contract: market.base_token.contract,
+        promoted: market.promoted,
+        change_week: market.changeWeek,
+        volume_week: market.volumeWeek,
+        change24: market.change24,
+        volume24: market.volume24,
+        last_price: market.last_price
+      }))
+
+      const itemSize = 54
+      const pageMode = true
+
+      return { pageMode, itemSize, header, data }
+    },
+
     filteredMarkets() {
       if (!this.markets) return []
 
       let markets = []
-      if (this.markets_active_tab == 'all') {
-        markets = this.markets
-      } else if (this.markets_active_tab == this.network.baseToken.symbol) {
-        markets = this.markets.filter(
-          (i) => i.base_token.contract == this.network.baseToken.contract
-        )
-      } else if (this.markets_active_tab == 'USDT') {
-        markets = this.markets.filter(
-          (i) => i.base_token.contract == 'tethertether'
-        )
-      } else if (this.markets_active_tab == 'fav') {
-        markets = this.markets.filter(
-          (i) => this.favMarkets.includes(i.id)
-        )
-      } else if (this.markets_active_tab == 'Terraformers') {
-        markets = this.markets.filter(
-          (i) => i.quote_token.contract == 'unboundtoken'
-        )
-      } else {
-        const ibcTokens = this.$store.state.ibcTokens.filter(
-          (i) => i != this.network.baseToken.contract
-        )
 
-        markets = this.markets.filter((i) => {
-          return (
-            ibcTokens.includes(i.base_token.contract) ||
-            ibcTokens.includes(i.quote_token.contract) ||
-            Object.keys(this.network.withdraw).includes(i.quote_token.str) ||
-            Object.keys(this.network.withdraw).includes(i.base_token.str)
+      switch (this.markets_active_tab) {
+        case 'all':
+          markets = this.markets
+          break
+
+        case this.network.baseToken.symbol:
+          markets = this.markets.filter(
+            i => i.base_token.symbol.name == this.network.baseToken.symbol ||
+            //this.network.USD_TOKEN == i.base_token.str.replace('@', '-').toLowerCase() ||
+            i.base_token.id == 'waxusdc-eth.token'
           )
-        })
+          break
+
+        case 'fav':
+          markets = this.markets.filter(
+            i => this.favMarkets.includes(i.id)
+          )
+          break
+
+        case 'USD':
+          // TODO All usdt tokens
+          markets = this.markets.filter((i) => {
+            //console.log('z', [i.quote_token.symbol.name, i.base_token.symbol.name], [i.quote_token.symbol.name, i.base_token.symbol.name].some(s => s.includes('USD')))
+
+            return (
+              this.network.USD_TOKEN.includes(i.base_token.contract) || this.network.USD_TOKEN.includes(i.quote_token.contract) ||
+
+              // TODO add config for USD tokens!
+              ([i.quote_token.contract, i.base_token.contract].includes('eth.token') && [i.quote_token.symbol.name,
+                i.base_token.symbol.name].some(s => s.includes('USD')))
+            )
+          })
+          break
+
+        case 'Cross-Chain': {
+          // Cross Chain
+          const ibcTokens = this.$store.state.ibcTokens.filter(
+            i => i != this.network.baseToken.contract
+          )
+          markets = this.markets.filter((i) => {
+            return (
+              this.network.USD_TOKEN.includes(i.base_token.contract) ||
+              ibcTokens.includes(i.base_token.contract) ||
+              ibcTokens.includes(i.quote_token.contract)
+            )
+          })
+          break
+        }
       }
 
-      markets = markets.filter((i) =>
-        i.slug.includes(this.search.toLowerCase())
-      )
+      markets = markets
+        .filter(i => i.slug.includes(this.search.toLowerCase()) && !i.scam)
+        .sort((a, b) => b.volumeWeek - a.volumeWeek)
+        .reduce((res, i) => {
+          i.promoted ? res[0].push(i) : res[1].push(i)
+          return res
+        }, [[], []])
+        .reduce((res, subArr) => {
+          res.push(...subArr)
+          return res
+        }, []).sort((a, b) => {
+          if (a.promoted && b.promoted) {
+            return this.network.PINNED_MARKETS.indexOf(a.id) - this.network.PINNED_MARKETS.indexOf(b.id)
+          }
 
-      markets = markets.filter((i) => {
-        return !this.network.SCAM_CONTRACTS.includes(i.quote_token.contract)
-      })
+          return 0
+        })
 
-      return markets.reverse()
+      return markets
+    }
+  },
+
+  watch: {
+    search() {
+      this.$router.replace({ name: this.$route.name, query: { search: this.search } })
     }
   },
 
@@ -251,23 +274,25 @@ export default {
       this.markets_active_tab = tab
     }
 
-    if (search) this.search = search
+    if (search) {
+      this.search = search
+    }
   },
 
-  methods: {
-    clickOrder(a, b, event) {
-      if (event && event.target.tagName.toLowerCase() === 'a') return
-
-      this.$router.push({ name: 'trade-index-id', params: { id: a.slug } })
+  head() {
+    return {
+      title: `Alcor Exchange | Trade tokens on ${this.$store.state.network.name.toUpperCase()}`,
     }
-  }
+  },
 }
 </script>
 
 <style lang="scss">
 .theme-dark {
-  .el-input__inner {
-    background-color: var(--bg-alter-2);
+  .markets {
+    .el-input__inner {
+      background-color: var(--bg-alter-2);
+    }
   }
 }
 
@@ -281,6 +306,14 @@ export default {
   }
 
 }
+
+.red {
+  color: var(--main-red);
+}
+
+.green {
+  color: var(--main-green);
+}
 </style>
 
 <style lang="scss" scoped>
@@ -290,20 +323,25 @@ export default {
   //justify-content: space-between;
   flex-wrap: wrap;
   padding: 20px 0;
+
   .search-container {
     width: 450px;
   }
 }
+
 .table td,
 .table th {
   border: 0 !important;
 }
+
 .last-price-item {
   width: 180px !important;
 }
+
 .pair-item {
   width: 300px !important;
 }
+
 .theme-dark {
   .markets {
     .el-card__body {
@@ -321,15 +359,32 @@ export default {
     cursor: pointer;
   }
 }
+
+.promoted {
+  float: right;
+}
+
 @media only screen and (max-width: 640px) {
   .table-intro {
-    padding: 14px 0;
-    flex-direction: column-reverse;
-    justify-content: center;
-    .search-container {
-      width: 100%;
-      margin-bottom: 12px;
+    div[role="radiogroup"] {
+      margin-bottom: 10px;
     }
+
+    padding: 14px 0;
+
+    .search-container {
+      width: 70%;
+    }
+  }
+
+  .el-table__row {
+    .cell {
+      font-size: 12px;
+    }
+  }
+
+  .promoted {
+    float: none;
   }
 }
 </style>

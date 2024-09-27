@@ -1,45 +1,40 @@
 <template lang="pug">
 .ibc-withdraw
-  el-button(type="text" plain size="mini" icon="el-icon-s-promotion" @click="open").hover-opacity Transfer
 
   el-dialog(title="Token transfer", :visible.sync="visible" width="25%" v-if="user").text-left
     el-alert(v-if="token.contract == 'bosibc.io'" type="warning" show-icon title="This is IBC token!")
-      span Before transferring to exchange, you have to withdraw it to it's original chain using BOS IBC Transfer button!
+      span {{ $t("Before transferring to exchange, you have to withdraw it to it's original chain using BOS IBC Transfer button") }} !
 
     el-form(ref="form" :model="form" label-position="left" :rules="rules")
       el-form-item.mt-1(prop="address")
         template(slot="label")
-          b Receiver
-        el-input(v-model="form.address" placeholder="address..").w-100
+          b {{ $t('Receiver') }}
+        el-input(v-model="form.address" :placeholder="$t('address..')").w-100
 
       el-form-item(prop="amount")
         span
-          b Amount
+          b {{ $t('Amount') }}
 
           br
 
-          span Balance
+          span {{ $t('Balance') }}
             el-button(type="text" @click="fullAmount").ml-1  {{ tokenBalance }}
 
         el-input(type="number" v-model="form.amount" clearable @change="amountChange").w-100
           span(slot="suffix").mr-1 {{ this.token.currency }}
 
-        b Memo
+        b {{ $t('Memo') }}
         el-input(type="text" v-model="form.memo" clearable placeholder="message").w-100
 
       el-form-item.mt-1
         span.dialog-footer.mb-4
           el-button(type='primary' @click="submit" :disabled="!form.amount || !addressValid" :loading="loading").w-100
-            | Transfer {{ token.currency }} to {{ form.address }}
+            | {{ $t('Transfer') }} {{ token.currency }} to {{ form.address }}
 </template>
 
 <script>
-// import fetch from 'node-fetch'
-// import { JsonRpc } from 'eosjs'
-
 import { captureException } from '@sentry/browser'
 import { mapState } from 'vuex'
-// import { asset } from 'eos-common'
 
 import config from '~/config'
 import TokenImage from '~/components/elements/TokenImage'
@@ -150,8 +145,7 @@ export default {
       )
     },
 
-    async open() {
-      if (!(await this.$store.dispatch('chain/asyncLogin'))) return
+    open() {
       this.visible = true
     },
 
@@ -184,7 +178,7 @@ export default {
         this.visible = false
 
         this.$alert(
-          `<a href="${this.network.monitor}/tx/${r.transaction_id}" target="_blank">Transaction id</a>`,
+          `<a class="pointer" href="${this.monitorTx(r.transaction_id)}" target="_blank">Transaction id</a>`,
           'Transaction complete!',
           {
             dangerouslyUseHTMLString: true,
@@ -214,6 +208,7 @@ export default {
 .upperinput {
   text-transform: uppercase;
 }
+
 .upperinput:placeholder-shown {
   text-transform: none;
 }

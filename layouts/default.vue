@@ -1,103 +1,70 @@
 <template lang="pug">
-div
-  AlcorLoading
-  ResourcesModal
-  ModalsDialog
-  .layout.alcor-inner(:class="$route.name == 'trade-index-id' ? 'is-market' : ''" ref="top")
-    nav.nav(v-if='!isMobile')
-      .nav-side.nav-left
-        nuxt-link(to='/')
-          img.logo(v-if="$colorMode.value == 'light'" src='~/assets/logos/alcorblack.svg' height='44')
-          img.logo(v-else='' height='44' src='~/assets/logos/alcorwhite.svg' alt='')
-        ul.nav-items
-          li(v-for='item in menuItems' :key='item.index')
-            AlcorLink.item(:to='item.index' flat :class="{ active: isActive(item.index) }")
-              | {{ item.name }}
-      .nav-side.nav-right
-        ConnectNav
-    .menu-and-menu-header(v-else)
-      .menu-header
-        .logo
-          nuxt-link(to='/')
-            img.logo(v-if="$colorMode.value == 'light'" src='~/assets/logos/alcorblack.svg' height='34')
-            img.logo(v-else='' height='34' src='~/assets/logos/alcorwhite.svg' alt='')
-        AlcorButton(@click='openMenu' :icononlyalt='true')
-          i.el-icon-more
-        nav(:class="['menu', { menuActive }]")
-          .logo
-            img(v-if="$colorMode.value == 'light'" src='~/assets/logos/alcorblack.svg' height='50')
-            img(v-else='' height='50' src='~/assets/logos/alcorwhite.svg' alt='')
-          ul.menu-items
-            li(v-for='item in menuItems' :key='item.index')
-              AlcorLink.item(:to='item.index' flat='')
-                | {{ item.name }}
-        .menu-underlay(@click='closeMenu' v-if='menuActive')
-      .fixed-menu
-        ConnectNav
+.unlim-width.default-layout
+  .not-footer
+    TopNav.px-3.py-2
 
-    .main
+    AlcorLoading
+    ResourcesModal
+    ModalsDialog
+    AnnouncementModal
+
+    .main(:class="{ 'alcor-inner': !fullWidth , 'unlim-width': fullWidth }")
       nuxt
-    FooterBlock
+  FooterBlock.footer-block
 </template>
 
 <script>
-import { mapGetters } from 'vuex'
-
 import config from '~/config'
 
+import TopNav from '~/components/layout/TopNav'
 import ModalsDialog from '~/components/modals/ModalsDialog'
-// import ChainSelect from '~/components/elements/ChainSelect'
+import ChainSelect from '~/components/elements/ChainSelect'
 import Footer from '~/components/footer/Footer'
 import AlcorButton from '~/components/AlcorButton'
 import AlcorLink from '~/components/AlcorLink'
 import ConnectNav from '~/components/layout/ConnectNav.vue'
 import AlcorLoading from '~/components/AlcorLoading.vue'
 import ResourcesModal from '~/components/modals/Resources.vue'
+import AnnouncementModal from '~/components/modals/AnnouncementModal.vue'
 
 export default {
   components: {
     ModalsDialog,
-    // ChainSelect,
+    ChainSelect,
     FooterBlock: Footer,
     AlcorLink,
     AlcorButton,
     ConnectNav,
     AlcorLoading,
-    ResourcesModal
+    ResourcesModal,
+    AnnouncementModal,
+    TopNav,
   },
 
   data() {
     return {
       netError: false,
-
-      networks: [],
-      current_chain: '',
-
       app_name: config.APP_NAME,
-
-      menuActive: false
+      menuActive: false,
     }
   },
 
   computed: {
-    ...mapGetters(['user']),
+    fullWidth() {
+      // Full with for this pages
+      const tradeLocales = this.$i18n.locales.map(({ code }) => `trade-index-id___${code}`)
+      const indexLocales = this.$i18n.locales.map(({ code }) => `index___${code}`)
+      return [...tradeLocales, ...indexLocales].includes(this.$route.name)
+    },
 
     menuItems() {
       const items = []
 
-      if (
-        ['eos', 'wax', 'jungle', 'telos', 'local'].includes(
-          this.$store.state.network.name
-        )
-      ) {
+      if (['eos', 'wax', 'jungle', 'telos', 'local'].includes(this.$store.state.network.name)) {
         items.push({ index: '/swap', name: 'Swap' })
       }
 
       items.push({ index: '/markets', name: 'Markets' })
-
-      //if (['eos'].includes(this.$store.state.network.name)) {
-      //  items.push({ index: '/swap', name: 'Swap' })
-      //}
 
       items.push({ index: '/otc', name: 'OTC' })
 
@@ -105,40 +72,31 @@ export default {
         items.push({ index: '/nft-market', name: 'NFT' })
       }
 
-      //items.push({ index: '/about', name: 'About' })
-
       items.push({ index: '/wallet', name: 'Wallet' })
-
       items.push({ index: '/docs', name: 'Docs' })
 
       return items
     },
-
-    payForUser: {
-      get() {
-        return this.$store.state.chain.payForUser
-      },
-
-      set(value) {
-        this.$store.commit('chain/setPayForUser', value)
-      }
-    }
   },
 
   watch: {
     $route() {
       this.closeMenu()
-    }
+    },
   },
 
   async mounted() {
-    this.current_chain = this.$store.state.network.name
-
     try {
       await this.$rpc.get_info()
     } catch (e) {
       this.netError = true
       console.log('Net error', e)
+    }
+
+    if (!document.querySelector('html').getAttribute('trade-theme')) {
+      if (!window.localStorage.getItem('trade-theme')) window.localStorage.setItem('trade-theme', 'default')
+      document.querySelector('html').setAttribute('trade-theme', window.localStorage.getItem('trade-theme'))
+      this.$store.commit('settings/setTradeColor', window.localStorage.getItem('trade-theme'))
     }
   },
 
@@ -163,81 +121,89 @@ export default {
 
     closeMenu() {
       this.menuActive = false
-    }
-  }
+    },
+
+    changeChain(chain) {
+      // TODO Move to config: APP_DOMAIN
+      const location = chain == 'wax' ? 'https://alcor.exchange/' : `https://${chain}.alcor.exchange/`
+
+      this.loading = true
+      window.location = location + window.location.pathname.split('/')[1] || ''
+    },
+  },
 }
 </script>
 
 <style scoped lang="scss">
-.layout {
-  background: var(--background-color-base);
+.mobile-chain-select {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 10px;
 }
-.is-market {
-  max-width: 100%;
+.default-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  .footer-block {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
 }
 .nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
+  flex-wrap: nowrap;
+
   .nav-side {
     display: flex;
     align-items: center;
   }
 }
+
+.full-width {
+  max-width: 1920px;
+  padding: 0px;
+
+  .nav {
+    padding: 12px 20px;
+  }
+}
+
 .nav-items {
   list-style: none;
   margin: 0;
   padding: 0;
   margin-left: 14px;
   display: flex;
+
   .item {
     padding: 4px 14px;
     margin-right: 4px;
+
     &.active {
       background: var(--btn-active);
       color: var(--text-default) !important;
     }
   }
 }
-.nav-right {
-  .network-selection {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    padding: 4px 14px;
-    color: var(--text-default);
-    span {
-      margin-right: 4px;
-    }
-  }
-  .connect-button {
-    margin: 0 4px;
-  }
-}
-.d-item {
-  display: flex;
-  text-align: center;
-  padding: 4px 12px;
-  min-width: 150px;
-  color: var(--text-default);
-  cursor: pointer;
-  &:hover {
-    background: var(--hover);
-  }
-}
 
 .menu-header {
   display: flex;
-  justify-content: space-between;
+  //justify-content: space-between;
   align-items: center;
   padding: 8px;
 }
+
 .menu {
   position: fixed;
   top: 0;
   right: 0;
 }
+
 .menu-underlay {
   position: fixed;
   right: 0;
@@ -248,6 +214,7 @@ export default {
   opacity: 0.5;
   z-index: 238;
 }
+
 .menu {
   position: fixed;
   right: -280px;
@@ -259,6 +226,7 @@ export default {
   box-shadow: 0px 0px 14px 0px rgba(black, 0.4);
   transition: all 0.4s;
   overflow-y: auto;
+
   .logo {
     padding: 20px 0;
     display: flex;
@@ -266,37 +234,35 @@ export default {
     justify-content: center;
   }
 }
+
 .menu-items {
   display: flex;
   flex-direction: column;
+
   .item {
     padding: 4px 14px;
     margin: 2px 8px;
     display: flex;
+
     &.active {
       background: #161617;
       color: #f2f2f2 !important;
     }
   }
 }
+
 .menuActive {
   right: 0px;
 }
+
 .fixed-menu {
   background: var(--background-color-base);
   position: fixed;
-  box-shadow: 0 0 10px rgba(black, 0.4);
   bottom: 0;
   left: 0;
   width: 100%;
-  padding: 8px;
+  padding: 4px 16px;
   z-index: 230;
-}
-@media only screen and (max-width: 800px) {
-  .layout {
-    // TODO: something is causeing horizontal overflow I don't know what - Saeed
-    padding: 0 8px;
-  }
 }
 </style>
 
@@ -305,29 +271,35 @@ export default {
 a {
   text-decoration: none !important;
 }
+
 ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
+
 .always-dark {
   background: var(--btn-active) !important;
   color: #f2f2f2 !important;
 }
+
 .el-dropdown-menu {
   background: var(--bg-big-card);
   border: 1px solid var(--bg-big-card);
   border-radius: var(--radius-2);
 }
+
 .el-popper[x-placement^='bottom'] .popper__arrow::after,
 .el-popper[x-placement^='top'] .popper__arrow::after {
-  border-bottom-color: var(--bg-big-card);
-  border-top-color: var(--bg-big-card);
+  border-bottom-color: transparent;
+  border-top-color: transparent;
 }
+
 .el-dropdown-selfdefine {
   font-size: 1rem;
   color: var(--text-default);
 }
+
 .top-menu {
   .logo {
     height: 4em;

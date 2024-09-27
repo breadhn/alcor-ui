@@ -3,33 +3,25 @@
   .col
     el-card.box-card.mt-3
       .el-form
-        .lead.font-weight-bold  This is not a verification or request listing form!
+        .lead.font-weight-bold  {{ $t('This is not a verification or request listing form') }}!
 
         br
 
-        p By selecting a token from the list below, you will be offered to sign a transaction
-          |  that instantly opens a new market that will immediately be ready for placing orders.
+        span {{ $t('By selecting a token from the list below, you will be offered to sign a transaction that instantly opens a new market that will immediately be ready for placing orders') }}.
           br
-          | This happens on smart contract, without the participation of third parties.
+          | {{ $t('This happens on smart contract, without the participation of third parties') }}.
 
-        small *You will buy 530(~0.02 {{ network.baseToken.symbol }}) RAM bytes for new market creation
+        small *{{ $t('You will buy') }} 530(~0.02 {{ network.baseToken.symbol }}) {{ $t('RAM bytes for new market creation') }}
 
       PleaseLoginButton
         el-form(ref="form" :model="form" label-position="left" :rules="rules")
           el-card.mb-2
             .clearfix(slot="header")
-              b.text-muted BASE TOKEN
+              b.text-muted {{ $t('QUOTE TOKEN') }} (Target token)
 
-            el-form-item(label="System token or USDT is recommended" prop="quote_token.contract")
+            el-form-item(:label="$t('System token or USDT is recommended')" prop="quote_token.contract")
               el-select(v-model='base_select' v-if="user && user.balances"
-     value-key="id" filterable placeholder='Select' clearable @change="selectBaseToken")
-                el-option(
-                  :label="network.baseToken.symbol + '@' + network.baseToken.contract",
-                  :value="network.baseToken"
-                )
-                  TokenImage(:src="$tokenLogo(network.baseToken.symbol, network.baseToken.contract)" height="25")
-                  span.ml-3 {{ network.baseToken.symbol + '@' + network.baseToken.contract }}
-
+                value-key="id" filterable :placeholder='$t("Select")' clearable @change="selectBaseToken")
                 el-option(
                   v-for="t in tokens",
                   :key="t.id",
@@ -37,43 +29,49 @@
                   :value="t"
                 )
                   TokenImage(:src="$tokenLogo(t.currency, t.contract)" height="25")
-                  span.ml-3 {{ t.currency + '@' + t.contract }}
+                  span.ml-3 {{ t.id }}
 
           el-card.mb-2
             .clearfix(slot="header")
-              b.text-muted QUOTE TOKEN
+              b.text-muted {{ $t('BASE TOKEN') }} (Listing token)
 
             //el-tabs(@tab-click="quote_select = ''" type="border-card")
             el-tabs(@tab-click="quote_select = ''")
-              el-tab-pane(label="Auto select")
+              el-tab-pane(:label="$t('Auto select')")
                 el-alert(v-if="user && !user.balances" type="warning")
-                  .lead Unable to fetch user tokens.. use manually method
+                  .lead {{ $t('Unable to fetch user tokens.. use manually method') }}
 
-                el-form-item(label="Select token for new market" prop="quote_token.contract")
-                  el-select(v-model='quote_select' v-if="user && user.balances"
-         value-key="id" filterable placeholder='Select' clearable @change="selectToken")
+                el-form-item(:label="$t('Select token for new market')" prop="quote_token.contract")
+                  el-select(v-model='quote_select' v-if="user && listingTokens"
+                    value-key="id" filterable :placeholder='$t("Select")' clearable @change="selectToken")
                     el-option(
-                      v-for="t in tokens",
+                      v-for="t in listingTokens",
                       :key="t.id",
                       :label="t.id",
                       :value="t"
                     )
                       TokenImage(:src="$tokenLogo(t.currency, t.contract)" height="25")
-                      span.ml-3 {{ t.currency + '@' + t.contract }}
+                      span.ml-3 {{ t.id }}
 
-              el-tab-pane(label="Manually")
-                el-form-item(label="Token contract" prop="quote_token.contract")
-                  el-input(placeholder="eosio.token betdicetoken ridlridlcoin eosiomeetone etc.." v-model="form.quote_token.contract")
+              el-tab-pane(:label="$t('Manually')")
+                el-form-item(:label="$t('Token contract')" prop="quote_token.contract")
+                  el-input(:placeholder="$t('eosio.token betdicetoken ridlridlcoin eosiomeetone etc..')" v-model="form.quote_token.contract")
 
-                el-form-item(v-if="form.quote_token.contract" label="Token symbol" prop="quote_token.symbol")
-                  el-input(placeholder="DICE TRYBE CAT EOS etc.." v-model="form.quote_token.symbol").upperinput
+                el-form-item(v-if="form.quote_token.contract" :label="$t('Token symbol')" prop="quote_token.symbol")
+                  el-input(:placeholder="$t('DICE TRYBE CAT EOS etc..')" v-model="form.quote_token.symbol").upperinput
 
               .row(v-if="form.quote_token.contract && form.quote_token.symbol").mt-3
                 .col
-                  .lead
-                    TokenImage(:src="$tokenLogo(form.quote_token.symbol, form.quote_token.contract)" height="40")
+                  .fs-15
+                    TokenImage(:src="$tokenLogo(form.quote_token.symbol, form.quote_token.contract)" height="25")
                     span  {{ form.quote_token.symbol }}@{{ form.quote_token.contract }}
-                  small.text-muted.ml-1.mt-2   Creation new market fee is:
+
+                    span.ml-2 /
+
+                    TokenImage(:src="$tokenLogo(base_token.symbol, base_token.contract)" height="25").ml-2
+                    span   {{ base_token.symbol }}@{{ base_token.contract }}
+
+                  small.text-muted.ml-1.mt-2   {{ $t("Creation new market fee is") }}:
                     span(v-if="network.baseToken.contract != base_token.contract")  (x2 for custom base token)
                   b  {{ creation_fee }}
 
@@ -101,6 +99,8 @@ export default {
 
   data() {
     return {
+      base_token: null,
+
       form: {
         base_token: {
           symbol: '',
@@ -162,16 +162,17 @@ export default {
     ...mapGetters(['user', 'knownTokens']),
     ...mapState(['network']),
 
-    tokens() {
-      return this.user.balances.filter((t) => {
-        if (
-          t.contract == this.network.baseToken.contract &&
-          t.currency == this.network.baseToken.symbol
-        )
-          return false
+    listingTokens() {
+      if (!this.base_token) return this.tokens
 
-        //return !this.knownTokens.some(k => k.str == t.id)
-        return true
+      return this.tokens.filter(t => t.id != this.base_token.id)
+    },
+
+    tokens() {
+      return this.$store.state.tokens.map(t => {
+        t.currency = t.symbol
+
+        return t
       })
     }
   },
@@ -198,9 +199,10 @@ export default {
   },
 
   mounted() {
-    this.base_select =
-      this.network.baseToken.symbol + '@' + this.network.baseToken.contract
+    this.base_select = this.network.baseToken.id
+
     this.base_token = {
+      id: this.network.baseToken.id,
       symbol: this.network.baseToken.symbol,
       contract: this.network.baseToken.contract,
       precision: this.network.baseToken.precision
@@ -230,6 +232,7 @@ export default {
       }
 
       this.form.quote_token = {
+        id: token.id,
         symbol: token.currency || token.symbol,
         contract: token.contract,
         precision
@@ -237,7 +240,9 @@ export default {
     },
 
     selectBaseToken(token) {
+      console.log('selectBaseToken', token)
       this.base_token = {
+        id: token.id,
         symbol: token.currency || token.symbol,
         contract: token.contract,
         precision: token.precision || parseFloat(token.decimals)
@@ -284,18 +289,20 @@ export default {
 
       try {
         await this.$store.dispatch('chain/sendTransaction', actions)
+
+        this.$store.commit('loading/OPEN', { title: 'Market Creation', text: 'Market will be available in 1-2 minutes.\n Waiting for market creation...' })
+        // Wait one minute for market creation
+        await new Promise(resolve => setTimeout(resolve, 1.5 * 60 * 1000))
+        await this.$store.dispatch('loadMarkets')
+
+        this.$store.commit('loading/CLOSE')
+
         this.$notify({
           title: 'Market creation',
           message: 'Market was created successfully',
           type: 'info'
         })
-        this.$router.push({
-          name: 'trade-index-id',
-          params: {
-            id: `${symbol}-${contract}_${this.base_token.symbol}-${this.base_token.contract}`
-          }
-        })
-        await this.$store.dispatch('loadMarkets')
+        this.$router.push('/trade/' + `${symbol}-${contract}_${this.base_token.symbol}-${this.base_token.contract}`)
       } catch (e) {
         captureException(e, { extra: { contract, symbol, precision } })
         this.$notify({ title: 'Market creation', message: e, type: 'error' })

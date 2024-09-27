@@ -12,6 +12,7 @@
             el-carousel-item(v-for="nft in order.sell" :key="nft.id")
               .p-3.text-center(v-if="nft.mdata")
                 b {{ nft.mdata.name }}
+                p {{nft.mdata.img}}
                 img(:src="nft.mdata.img" width="80%" @error="setOriginalSrc")
           //.p-3(v-for="nft in order.sell").pointer.mb-1
             .row
@@ -22,7 +23,7 @@
               .col
                 .d-flex.flex-column
                   b ID: {{ nft.id }}
-                  span Category: {{ nft.category }}
+                  span {{ $t('Category') }}: {{ nft.category }}
                   span Author
                     b.ml-1 {{ nft.author }}
             .row
@@ -37,7 +38,7 @@
                 .d-flex.flex-column
                   span {{ nft.mdata.name }}
                   b ID: {{ nft.id }}
-                  span Category: {{ nft.category }}
+                  span {{ $t('Category') }}: {{ nft.category }}
                   span Author
                     b.ml-1 {{ nft.author }}
             hr.m-0
@@ -58,20 +59,23 @@ export default {
     price() {
       const q = asset(this.order.buy.quantity)
       return q
-    }
+    },
   },
 
   methods: {
     open() {
-      this.$router.push({ name: 'nft-market-order-id', params: { id: this.order.id } })
+      this.$router.push({ name: `nft-market-order-id___${this.$i18n.locale}`, params: { id: this.order.id } })
     },
 
     setOriginalSrc(event) {
       if (event.target.src.includes('https://images.hive.blog/0x0/')) {
-        event.target.src = event.target.src.replace('https://images.hive.blog/0x0/', '')
+        event.target.src = event.target.src.replace(
+          'https://images.hive.blog/0x0/',
+          ''
+        )
       }
-    }
-  }
+    },
+  },
 }
 </script>
 

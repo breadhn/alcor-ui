@@ -3,17 +3,20 @@ import axios from 'axios'
 import debounce from 'lodash/debounce'
 import findIndex from 'lodash/findIndex'
 
+import { parseToken } from '~/utils/amm'
 import { parseAsset, make256key, nameToUint64 } from '~/utils'
 
 export const strict = false
 
 export const state = () => ({
   user: null,
+  //user: { name: 'liquid.mars' },
+  userBalances: [],
   userDeals: [],
   userOrders: [],
   userOrdersLoading: true,
   account: null,
-  liquidityPositions: [],
+  liquidityPositions: [], // v1 old pool
 
   accountLimits: {
     buyorders: {},
@@ -29,6 +32,8 @@ export const state = () => ({
 
   baseUrl: '',
   tokens: [],
+  tokenLogos: [],
+  eosAirdropTokens: [],
   ibcTokens: ['eth.token'],
   lihgHistoryBlock: null,
   blockNum: null
@@ -54,25 +59,43 @@ export const mutations = {
     else balances.splice(index, 1, { ...balances[index], ...balance })
 
     state.user = { ...state.user, balances }
+
+    // New balances logic
+    state.userBalances = balances
+    // TODO Transit to new userBalances property
   },
 
-  setUser: (state, user) => state.user = user,
+  setUser: (state, user) => {
+    state.user = user
+    if (user?.balances) {
+      state.userBalances = user.balances
+    }
+  },
+
+  setUserBalances: (state, balances) => {
+    if (state.user) state.user.balances = balances
+    state.userBalances = balances
+  },
+
   setMarkets: (state, markets) => {
     state.markets_obj = markets.reduce((obj, item) => Object.assign(obj, { [item.id]: item }), {})
     state.markets = markets
   },
+
   setUserDeals: (state, deals) => state.userDeals = deals,
   setLiquidityPositions: (state, positions) => state.liquidityPositions = positions,
 
+  setIbcTokens: (state, tokens) => state.ibcTokens = tokens,
   setBaseUrl: (state, url) => state.baseUrl = url,
   setLoading: (state, loading) => state.loading = loading,
   setTokens: (state, tokens) => state.tokens = tokens,
+  setEosAirdropTokens: (state, tokens) => state.eosAirdropTokens = tokens,
   setAccount: (state, account) => state.account = account,
   setAccountLimits: (state, limits) => state.accountLimits = limits,
   setUserOrders: (state, orders) => state.userOrders = orders,
   setUserOrdersLoading: (state, loading) => state.userOrdersLoading = loading,
   setLihgHistoryBlock: (state, block) => state.lihgHistoryBlock = block,
-  setBlockNum: (state, block) => state.blockNum = block,
+  setBlockNum: (state, block) => state.blockNum = block
 }
 
 // Move to notifications module (nee create it)
@@ -84,8 +107,21 @@ const playOrderMatchSound = debounce(() => {
 const loadOrdersDebounce = {}
 
 export const actions = {
-  init({ dispatch, state, getters }) {
-    dispatch('fetchTokens')
+  // TODO
+  // async nuxtServerInit({ dispatch }) {
+  //   try {
+  //     // TODO Make sure dns cached (it's server call)
+  //     await dispatch('loadAllTokens')
+  //   } catch (e) {
+  //     console.error('SERVER API CALL ERR (loadAllTokens)', e)
+  //   }
+  // },
+
+  init({ dispatch, state, getters, commit }) {
+    dispatch('addIBCTokens')
+
+    dispatch('loadAllTokens')
+    dispatch('fetchEosAirdropTokens')
 
     if (state.network.name == 'local') return
 
@@ -98,7 +134,7 @@ export const actions = {
     })
 
     // TODO Move push notifications to other place
-    this.$socket.on('match', match => {
+    this.$socket.on('match', (match) => {
       if (loadOrdersDebounce[match.market_id]) clearTimeout(loadOrdersDebounce[match.market_id])
 
       loadOrdersDebounce[match.market_id] = setTimeout(() => {
@@ -106,7 +142,7 @@ export const actions = {
         dispatch('loadOrders', match.market_id)
       }, 500)
 
-      const market = getters.markets.filter(m => m.id == match.market_id)[0]
+      const market = getters.markets.filter((m) => m.id == match.market_id)[0]
 
       const notify_options = {}
       if (document.hidden) {
@@ -117,15 +153,15 @@ export const actions = {
         this._vm.$notify({
           ...notify_options,
           title: `Order match - ${market.symbol}`,
-          message: `${match.bid} ${market.base_token.symbol.name} at ${match.price}`,
-          type: 'success'
+          message: `${match.bid} ${market.quote_token.symbol.name} at ${match.price}`,
+          type: 'success',
         })
       } else {
         this._vm.$notify({
           ...notify_options,
           title: `Order match - ${market.symbol}`,
           message: `${match.ask} ${market.base_token.symbol.name} at ${match.price}`,
-          type: 'success'
+          type: 'success',
         })
       }
 
@@ -138,12 +174,24 @@ export const actions = {
     this.$colorMode.preference = this.$colorMode.preference !== 'dark' ? 'dark' : 'light'
   },
 
-  async fetchTokens({ commit }) {
+  dynamicTheme({ state, commit }, radio_value) {
+    this.$colorMode.preference = this.$colorMode.preference !== 'dark' ? 'dark' : radio_value
+  },
+
+  addIBCTokens({ state, commit }) {
+    const wrapTokenContracts = Object.values(state.network?.ibc?.wrapTokenContracts || []).flat(1)
+    commit('setIbcTokens', [...state.ibcTokens, ...wrapTokenContracts])
+  },
+
+  async fetchEosAirdropTokens({ commit }) {
     try {
       const { data } = await this.$axios.get(
         'https://raw.githubusercontent.com/eoscafe/eos-airdrops/master/tokens.json'
       )
-      commit('setTokens', data)
+
+      if (typeof data !== 'object') return
+
+      commit('setEosAirdropTokens', data)
     } catch (e) {
       console.error('Fetching tokens from eos-airdrops', e)
     }
@@ -174,7 +222,7 @@ export const actions = {
         contract: state.network.baseToken.contract,
         currency: state.network.baseToken.symbol,
         decimals: state.network.baseToken.precision,
-        amount
+        amount,
       })
     }
   },
@@ -182,101 +230,150 @@ export const actions = {
   async loadAccountLimits({ commit, state }) {
     if (!state.user) return
 
-    const { rows: [account] } = await this.$rpc.get_table_rows({
+    const {
+      rows: [account],
+    } = await this.$rpc.get_table_rows({
       code: state.network.contract,
       scope: state.network.contract,
       table: 'account',
       limit: 1,
       lower_bound: nameToUint64(state.user.name),
-      upper_bound: nameToUint64(state.user.name)
+      upper_bound: nameToUint64(state.user.name),
     })
 
     if (account) commit('setAccountLimits', account)
   },
 
+  async loadAllTokens({ dispatch, commit, state }) {
+    const { data: tokens } = await this.$axios.get('/v2/tokens')
+    commit('setTokens', tokens)
+
+    const { contract, symbol } = state.network.baseToken
+    const system_token = tokens.find((t) => t.contract == contract && t.symbol == symbol)
+
+    commit('wallet/setSystemPrice', system_token.usd_price, { root: true })
+  },
+
   async loadMarkets({ state, commit, getters, dispatch }) {
     const { data } = await this.$axios.get('/markets')
-    data.map(m => {
+    data.map((m) => {
       const { base_token, quote_token } = m
 
       m.symbol = quote_token.symbol.name + ' / ' + base_token.symbol.name
-      m.slug = (quote_token.str + '_' + base_token.str).toLowerCase().replace(/@/g, '-')
+      m.slug = (quote_token.str + '_' + base_token.str).toLowerCase().replace(/@/g, '-') // TODO change to ticker_id
+      m.promoted = state.network.PINNED_MARKETS.includes(m.id)
+      m.scam = state.network.SCAM_CONTRACTS.includes(quote_token.contract)
 
       m.i256 = make256key(base_token.contract, base_token.symbol.name, quote_token.contract, quote_token.symbol.name)
     })
     commit('setMarkets', data)
   },
 
-  async loadIbc({ state, commit, rootGetters }) {
-    const { rows: ibcTokens } = await this.$rpc.get_table_rows({
-      code: 'bosibc.io',
-      scope: 'bosibc.io',
-      table: 'accepts',
-      limit: 1000
+  setMarketsRelatedPool({ state, commit, getters }) {
+    console.time('setMarketsRelatedPool')
+
+    const pools = getters['amm/poolsPlainWithStatsAndUserData']
+    const poolMap = new Map()
+
+    // Создаем Map для быстрого поиска пулов по паре токенов
+    pools.forEach((pool) => {
+      const tokenAId = parseToken(pool.tokenA).id
+      const tokenBId = parseToken(pool.tokenB).id
+      const key1 = `${tokenAId}-${tokenBId}`
+      const key2 = `${tokenBId}-${tokenAId}`
+
+      // Сохраняем пул для обоих направлений пары токенов
+      if (!poolMap.has(key1) || poolMap.get(key1)?.poolStats?.tvlUSD < pool.poolStats?.tvlUSD) {
+        poolMap.set(key1, pool)
+      }
+      if (!poolMap.has(key2) || poolMap.get(key2)?.poolStats?.tvlUSD < pool.poolStats?.tvlUSD) {
+        poolMap.set(key2, pool)
+      }
     })
 
-    const tokens = [...new Set([...state.ibcTokens, ...ibcTokens.map(t => t.original_contract)])]
+    const markets = state.markets.map((market) => {
+      const { base_token, quote_token } = market
+      const key = `${base_token.id}-${quote_token.id}`
 
-    commit('setIbcTokens', tokens)
-    commit('setIbcAccepts', ibcTokens)
-  },
+      const relatedPool = poolMap.get(key)
 
-  loadUserLiqudityPositions({ state, commit }) {
-    this.$axios.get(`/account/${state.user.name}/liquidity_positions`).then(r => {
-      commit('setLiquidityPositions', r.data)
+      return { relatedPool, ...market }
     })
+
+    commit('setMarkets', markets)
+    console.timeEnd('setMarketsRelatedPool')
   },
 
   async loadUserOrders({ state, commit, dispatch }) {
     if (!state.user || !state.user.name) return
 
-    const sellOrdersMarkets = state.accountLimits.sellorders.map(o => o.key)
-    const buyOrdersMarkets = state.accountLimits.buyorders.map(o => o.key)
+    try {
+      const sellOrders = state.accountLimits.sellorders
+      const buyOrders = state.accountLimits.buyorders
+      const sellOrdersMarkets = Array.isArray(sellOrders) ? sellOrders.map((o) => o.key ?? o.first) : []
+      const buyOrdersMarkets = Array.isArray(buyOrders) ? buyOrders.map((o) => o.key ?? o.first) : []
 
-    const markets = new Set([...sellOrdersMarkets, ...buyOrdersMarkets])
+      const markets = new Set([...sellOrdersMarkets, ...buyOrdersMarkets])
 
-    for (const market_id of markets) {
-      await dispatch('loadOrders', market_id)
-      await new Promise(resolve => setTimeout(resolve, 250))
+      for (const market_id of markets) {
+        await dispatch('loadOrders', market_id)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      commit('setUserOrdersLoading', false)
     }
-    commit('setUserOrdersLoading', false)
   },
 
   async loadOrders({ state, commit, dispatch }, market_id) {
-    if (market_id == null) return console.error('LoadOrders for NULL market!') // FIXME Happends on first load
+    if (market_id == null) return
     if (!state.user || !state.user.name) return
 
     const { name } = state.user
 
     await Promise.all([
-      dispatch('api/getBuyOrders', {
-        market_id,
-        key_type: 'i64',
-        index_position: 3,
-        lower_bound: nameToUint64(name),
-        upper_bound: nameToUint64(name)
-      }, { root: true }),
+      dispatch(
+        'api/getBuyOrders',
+        {
+          market_id,
+          key_type: 'i64',
+          index_position: 3,
+          lower_bound: nameToUint64(name),
+          upper_bound: nameToUint64(name),
+        },
+        { root: true }
+      ),
 
-      dispatch('api/getSellOrders', {
-        market_id,
-        key_type: 'i64',
-        index_position: 3,
-        lower_bound: nameToUint64(name),
-        upper_bound: nameToUint64(name)
-      }, { root: true })
-    ]).then(([buyOrders, sellOrders]) => {
-      buyOrders.map(o => {
-        o.type = 'buy'
-        o.market_id = market_id
-      })
-      sellOrders.map(o => {
-        o.type = 'sell'
-        o.market_id = market_id
-      })
+      dispatch(
+        'api/getSellOrders',
+        {
+          market_id,
+          key_type: 'i64',
+          index_position: 3,
+          lower_bound: nameToUint64(name),
+          upper_bound: nameToUint64(name),
+        },
+        { root: true }
+      ),
+    ])
+      .then(([buyOrders, sellOrders]) => {
+        buyOrders.map((o) => {
+          o.type = 'buy'
+          o.market_id = market_id
+        })
+        sellOrders.map((o) => {
+          o.type = 'sell'
+          o.market_id = market_id
+        })
 
-      // TODO Need optimization so much!
-      commit('setUserOrders', state.userOrders.filter(o => o.market_id != market_id).concat(buyOrders.concat(sellOrders)))
-    }).catch(e => console.log(e))
+        // TODO Need optimization so much!
+        commit(
+          'setUserOrders',
+          state.userOrders.filter((o) => o.market_id != market_id).concat(buyOrders.concat(sellOrders))
+        )
+      })
+      .catch((e) => console.log(e))
   },
 
   async updateBalance({ state, commit, getters, dispatch }, { contract, symbol }) {
@@ -285,7 +382,6 @@ export const actions = {
     const balance = await this.$rpc.get_currency_balance(contract, state.user.name, symbol)
     if (!balance[0]) return
 
-
     const asset = parseAsset(balance[0])
 
     commit('updateBalance', {
@@ -293,7 +389,7 @@ export const actions = {
       contract,
       currency: symbol,
       decimals: asset.symbol.precision,
-      amount: asset.prefix
+      amount: asset.prefix,
     })
   },
 
@@ -304,13 +400,13 @@ export const actions = {
       code: state.network.pools.contract,
       scope: state.user.name,
       table: 'accounts',
-      limit: 1000
+      limit: 1000,
     })
 
-    const balances = state.user.balances.filter(b => b.contract != state.network.pools.contract)
+    const balances = state.user.balances.filter((b) => b.contract != state.network.pools.contract)
     commit('setUser', { ...state.user, balances })
 
-    rows.map(r => {
+    rows.map((r) => {
       const asset = parseAsset(r.balance)
 
       commit('updateBalance', {
@@ -318,7 +414,7 @@ export const actions = {
         contract: 'alcorammswap',
         currency: asset.symbol.symbol,
         decimals: asset.symbol.precision,
-        amount: asset.prefix
+        amount: asset.prefix,
       })
     })
   },
@@ -326,52 +422,84 @@ export const actions = {
   async loadUserBalances({ dispatch }) {
     try {
       await dispatch('loadUserBalancesLightAPI')
+      //await dispatch('loadUserBalancesHyperion')
     } catch (e) {
+      // console.log('Getting balances from Hyperion failed:', e)
+      // console.log('Try with LightAPI', e)
+      // await dispatch('loadUserBalancesLightAPI')
+
       console.log('Getting balances from LightAPI failed:', e)
       console.log('Try with hyperion', e)
       await dispatch('loadUserBalancesHyperion')
     }
   },
 
-  async loadUserBalancesLightAPI({ state, rootState, commit }) {
-    if (state.user) {
-      //this.$axios.get(`${state.network.lightapi}/api/balances/${state.network.name}/${rootState.user.name}`).then((r) => {
-      // FIXME Почему то нукстовский аксиос не работает для телефонов
-      const r = await axios.get(`${state.network.lightapi}/api/balances/${state.network.name}/${state.user.name}`)
+  async loadAccountBalance({ state, rootState, commit }, accountName) {
+    const { data } = await axios.get(`${state.network.lightapi}/api/balances/${state.network.name}/${accountName}`)
+    const balances = data.balances.filter((b) => parseFloat(b.amount) > 0)
 
-      // Check sync is correct
-      const block_time = new Date(r.data.chain.block_time + ' UTC')
-      const diff = (new Date().getTime() - block_time.getTime()) / 1000
+    return balances.map((token) => {
+      token.id = token.currency + '@' + token.contract
 
-      if (diff > 60) throw new Error('LightAPI sync is more the one minute out.')
+      const { systemPrice } = rootState.wallet
+      const market = state.markets.filter((m) => {
+        return (
+          m.base_token.contract == state.network.baseToken.contract &&
+          m.quote_token.contract == token.contract &&
+          m.quote_token.symbol.name == token.currency
+        )
+      })[0]
 
-      const balances = r.data.balances.filter(b => parseFloat(b.amount) > 0)
-      commit('setLihgHistoryBlock', r.data.chain.block_num)
+      if (market) {
+        token.usd_value = parseFloat(token.amount) * market.last_price * systemPrice
+      } else {
+        token.usd_value = 0
+      }
 
-      // TODO Refactor this and make separate filter/computed for getting token in USD
-      // Calc USD value
-      balances.map(token => {
-        token.id = token.currency + '@' + token.contract
+      if (token.contract == state.network.baseToken.contract) {
+        token.usd_value = parseFloat(token.amount) * systemPrice
+      }
 
-        const { systemPrice } = rootState.wallet
-        const market = state.markets.filter(m => {
-          return m.base_token.contract == state.network.baseToken.contract &&
-            m.quote_token.contract == token.contract &&
-            m.quote_token.symbol.name == token.currency
-        })[0]
+      return token
+    })
+  },
 
-        if (market) {
-          token.usd_value = (parseFloat(token.amount) * market.last_price) * systemPrice
-        } else {
-          token.usd_value = 0
-        }
+  async loadUserBalancesLightAPI({ state, commit }) {
+    if (!state.user) return
 
-        if (token.contract == state.network.baseToken.contract) {
-          token.usd_value = parseFloat(token.amount) * systemPrice
-        }
+    try {
+      const url = `${state.network.lightapi}/api/balances/${state.network.name}/${state.user.name}`
+      const response = await axios.get(url)
+      const data = response.data
+      const blockTime = new Date(data.chain.block_time + ' UTC')
+      const timeDiff = (new Date() - blockTime) / 1000
 
-        commit('updateBalance', token)
-      })
+      if (timeDiff > 60) {
+        throw new Error('LightAPI sync is more than one minute out.')
+      }
+
+      if (Array.isArray(data.balances) && data.balances.length) {
+        // Использование Map ускоряет доступ к ценам токенов
+        const tokenPrices = new Map(state.tokens.map((t) => [t.id, t.usd_price]))
+
+        const balances = data.balances
+          .filter((b) => parseFloat(b.amount) > 0)
+          .map((token) => {
+            const id = `${token.currency}@${token.contract}`
+            const tokenKey = id.replace('@', '-').toLowerCase()
+            const price = tokenPrices.get(tokenKey) || 0
+            return {
+              ...token,
+              id,
+              usd_value: parseFloat(token.amount) * price,
+            }
+          })
+
+        commit('setLihgHistoryBlock', data.chain.block_num)
+        commit('setUserBalances', balances)
+      }
+    } catch (error) {
+      console.error('Error loading user balances:', error)
     }
   },
 
@@ -379,51 +507,39 @@ export const actions = {
   async loadUserBalancesHyperion({ state, rootState, commit }) {
     console.log('loadUserBalances..')
     if (state.user) {
-      // TODO Вынести этот эндпоинт в конфиг
-      //this.$axios.get(`${state.network.lightapi}/api/balances/${state.network.name}/${rootState.user.name}`).then((r) => {
-      // FIXME Почему то нукстовский аксиос не работает для телефонов
-      const r = await axios.get(`${state.network.hyperion}/v2/state/get_tokens`, { params: { account: rootState.user.name } })
-      const balances = r.data.tokens.filter(b => parseFloat(b.amount) > 0)
-
-      //balances.sort((a, b) => {
-      //  if (a.contract == 'eosio.token' || b.contract == 'eosio.token') { return -1 }
-      //  return 1
-      //})
-
-      // TODO Refactor this and make separate filter/computed for getting token in USD
-      // Calc USD value
-      balances.map(token => {
-        if (!token.precision) token.precision = 0
-        token.currency = token.symbol
-        token.decimals = token.precision
-        token.id = token.currency + '@' + token.contract
-
-        const { systemPrice } = rootState.wallet
-        const market = state.markets.filter(m => {
-          return m.base_token.contract == state.network.baseToken.contract &&
-            m.quote_token.contract == token.contract &&
-            m.quote_token.symbol.name == token.currency
-        })[0]
-
-        if (market) {
-          token.usd_value = (parseFloat(token.amount) * market.last_price) * systemPrice
-        } else {
-          token.usd_value = 0
-        }
-
-        if (token.contract == state.network.baseToken.contract) {
-          token.usd_value = parseFloat(token.amount) * systemPrice
-        }
+      const { data } = await axios.get(`${state.network.hyperion}/v2/state/get_tokens`, {
+        params: { account: rootState.user.name, limit: 10000 },
       })
 
-      balances.sort((a, b) => {
-        if (a.contract == 'eosio.token' || b.contract == 'eosio.token') { return -1 }
+      if (Array.isArray(data?.tokens) && data.tokens.length) {
+        const tokenPrices = new Map(state.tokens.map((t) => [t.id, t.usd_price]))
 
-        return 0
-      })
+        const balances = data.tokens
+          .filter((b) => parseFloat(b.amount) > 0)
+          .map((token) => {
+            const id = `${token.symbol}@${token.contract}`
+            const tokenKey = id.replace('@', '-').toLowerCase()
+            const price = tokenPrices.get(tokenKey) || 0
 
-      balances.map(b => commit('updateBalance', b))
+            return {
+              ...token,
+              id,
+              currency: token.symbol,
+              decimals: token.precision,
+              usd_value: parseFloat(token.amount) * price,
+            }
+          })
+
+        commit('setUserBalances', balances)
+      }
     }
+  },
+
+  async fetchAccountDeals(_, accountName) {
+    const { data: deals } = await this.$axios.get(`https://alcor.exchange/api/account/${accountName}/deals`, {
+      params: { limit: 50 },
+    })
+    return deals
   },
 
   async fetchUserDeals({ state, commit }) {
@@ -432,7 +548,7 @@ export const actions = {
 
     const { data: deals } = await this.$axios.get(`/account/${state.user.name}/deals`)
     commit('setUserDeals', deals)
-  }
+  },
 }
 
 export const getters = {
@@ -444,6 +560,16 @@ export const getters = {
 
   user(state) {
     return state.user
+  },
+
+  promoted(state, getters) {
+    // TODO mock poolId now neet to implement in configs
+    return getters.markets
+      .filter(market => state.network.BANNER_MARKETS.includes(market.id))
+      .map(market => ({
+        ...market,
+        poolId: market.id === 156 ? 765 : market.id === 495 ? 1831 : undefined
+      })).reverse()
   },
 
   systemBalance(state) {

@@ -4,7 +4,7 @@ div.wallet
     el-input(
       v-model="search"
       prefix-icon="el-icon-search"
-      placeholder="Search market.."
+      :placeholder="$t('Search market') + ' ..'"
       size="small"
       clearable
     )
@@ -12,68 +12,76 @@ div.wallet
     el-checkbox(
       v-model="onlyBuy"
       id="onlyBuy"
-    ) Only buy orders
+    ) {{ $t('Only buy orders') }}
 
     el-checkbox(
       v-model="onlySell"
       id="onlySell"
-    ) Only sell orders
+    ) {{ $t('Only sell orders') }}
 
-    .d-flex.ml-auto
-      .cancel Total orders: {{ accountLimits.orders_total }}
+    .d-flex.flex-wrap.justify-content-between.align-items-center.w-100
+      .cancel {{ $t('Total orders') }}: {{ accountLimits.orders_total }}
 
-      .cancel.ml-3 Order slot limit: {{ accountLimits.orders_limit }}
+      .cancel {{ $t('Order slot limit') }}: {{ accountLimits.orders_limit }}
 
-      el-button(size="mini" @click="openInNewTab('https://t.me/alcorexchange')").ml-3 Buy more order slots
+      el-button.btn(size="mini" @click="openInNewTab('https://t.me/alcorexchange')") {{ $t('Buy more order slots') }}
 
-  .table.el-card.is-always-shadow
+  virtual-table(v-if="isMobile" :table="virtualTableData")
+    template(#row="{ item }")
+      wallet-position-row(:item="item" @cancel="cancelOrder(item)")
+  .table.el-card(v-else)
     el-table.alcor-table(
-      :data='filledPositions()',
+      :data='filteredPositions',
       style='width: 100%',
+      row-class-name="pointer"
+      rowKey="id"
+      @expand-change="handleExpandChange"
+      :expandRowKeys="expanded"
+      @row-click="handleRowClick"
     )
       el-table-column(type="expand")
-        template(#default="{row}")
+        template(#default="{ row }")
           .orders-container.table
             el-table(
               :data="row.orders"
               style="width: 100%"
             )
               el-table-column(
-                label="Order",
+                :label="$t('Order')",
               )
-                template(#default="{row}")
-                  span.order-type(:class="row.type === 'buy' ? 'green': 'red'") {{row.type}}
+                template(#default="{ row }")
+                  span.order-type(:class="row.type === 'buy' ? 'green' : 'red'") {{ $t(row.type) }}
               el-table-column(
-                label="Date",
+                :label="$t('Date')",
               )
-                template(#default="{row}") {{ row.timestamp | moment('DD-MM HH:mm') }}
+                template(#default="{ row }") {{ row.timestamp | moment('DD-MM HH:mm') }}
               el-table-column(
-                label="Price",
+                :label="$t('Price')",
               )
-                template(#default="{row}") {{ row.unit_price | humanPrice }}
+                template(#default="{ row }") {{ row.unit_price | humanPrice }}
               el-table-column(
-                label="Bid",
+                :label="$t('Bid')",
               )
-                template(#default="{row}") {{ row.bid.quantity | commaFloat }}
-              //el-table-column(label="Filled")
+                template(#default="{ row }") {{ row.bid.quantity | commaFloat }}
+              //el-table-column(:label="$t('Filled')")
                 template(#default="{row}") {{row.filled}}%
               el-table-column(
-                label="Ask",
+                :label="$t('Ask')",
               )
-                template(#default="{row}")
+                template(#default="{ row }")
                   .wax-value {{ row.ask.quantity | commaFloat }}
               el-table-column(
-                label="Action",
+                :label="$t('Action')",
               )
-                template(#default="{row}")
+                template(#default="{ row }")
                   .actions
-                    el-button(type="text" @click="cancelOrder(row)").red.hover-opacity Cancel Order
-      el-table-column(label='Asset', prop='date', :width='isMobile ? 150 : 280')
+                    el-button(size="medium" type="text" @click="cancelOrder(row)").red.hover-opacity {{ $t('Cancel order') }}
+      el-table-column(:label='$t("Asset")', prop='date', :width='isMobile ? 150 : 280')
         template(slot-scope='{row}')
           .asset-container
             TokenImage(
               :src='$tokenLogo(row.quote_token.symbol.name, row.quote_token.contract)',
-              :height="isMobile? '20' : '30'"
+              :height="isMobile ? '20' : '30'"
             )
 
             div.asset
@@ -81,53 +89,97 @@ div.wallet
               span.asset-contract.cancel {{ row.quote_token.contract }}
 
       el-table-column(
-        label='Current Orders',
+        :label='$t("Current Orders")',
       )
         template(slot-scope='{row}')
           .current-orders
-            span.green {{row.orderCount.buy}} Buy
+            span.green {{ row.orderCount.buy }} {{ $t('Buy') }}
             span.cancel &nbsp;|&nbsp;
-            span.red {{row.orderCount.sell}} sell
+            span.red {{ row.orderCount.sell }} {{ $t('Sell') }}
       el-table-column(
-        label='Total Quote',
+        :label='$t("Total Quote")',
       )
         template(slot-scope='{row}') {{ row.totalBase | commaFloat(row.base_token.symbol.precision) }} {{ row.base_token.symbol.name }}
       el-table-column(
-        label='Total Base',
+        :label='$t("Total Base")',
       )
         template(slot-scope='{row}') {{ row.totalQuote | commaFloat(row.quote_token.symbol.precision) }} {{ row.quote_token.symbol.name }}
       el-table-column(
-        label='Actions',
+        :label='$t("Actions")',
         width="260"
       )
         template(slot-scope='{row}')
           .actions
-            el-button(type="text" @click="trade(row)").green.hover-opacity Trade
-            el-button(type="text" @click="cancelAll(row)").red.hover-opacity Cancel All Orders
+            el-button(size="medium" type="text" @click.prevent="trade(row)").green.hover-opacity {{ $t('Trade') }}
+            el-button(size="medium" type="text" @click.prevent="cancelAll(row)").red.hover-opacity {{ $t('Cancel All Orders') }}
+
 </template>
 
 <script>
 import { mapGetters, mapState } from 'vuex'
 import TokenImage from '@/components/elements/TokenImage'
+import VirtualTable from '@/components/VirtualTable'
+import WalletPositionRow from '@/components/wallet/WalletPositionRow'
 import SelectUI from '~/components/UI/input/selectUI.vue'
+
 export default {
   name: 'Wallet',
   components: {
     TokenImage,
-    SelectUI
+    SelectUI,
+    VirtualTable,
+    WalletPositionRow,
   },
   data: () => ({
     search: '',
     onlyBuy: false,
-    onlySell: false
+    onlySell: false,
+    expanded: [],
   }),
 
   computed: {
     ...mapGetters({
       user: 'user',
-      pairPositions: 'wallet/pairPositions'
+      pairPositions: 'wallet/pairPositions',
     }),
     ...mapState(['network', 'markets', 'accountLimits']),
+
+    filteredPositions() {
+      return this.pairPositions.filter((el) => {
+        if (el.slug && !el.slug.includes(this.search.toLowerCase())) return false
+        if (this.onlyBuy && !el.orderCount.buy) return false
+        if (this.onlySell && !el.orderCount.sell) return false
+        if (!el.quote_token || !el.base_token) return false
+        return el
+      })
+    },
+
+    virtualTableData() {
+      const header = [
+        {
+          label: 'Type',
+          value: 'type',
+          width: '120px',
+          sortable: true,
+        },
+        {
+          label: 'Order',
+          value: 'order',
+          width: '610px',
+        },
+        {
+          label: 'Action',
+          value: 'action',
+          width: '345px',
+        },
+      ]
+
+      const data = this.filteredPositions.map(({ orders }) => orders).flat()
+      const itemSize = this.isMobile ? 95 : 84
+      const pageMode = true
+
+      return { pageMode, itemSize, header, data }
+    },
 
     balances() {
       if (!this.user) return []
@@ -139,28 +191,33 @@ export default {
 
           return b.id.toLowerCase().includes(this.search.toLowerCase())
         })
-        .sort((a, b) =>
-          a.contract == this.network.baseToken.contract ? -1 : 1
-        )
-    }
+        .sort((a, b) => (a.contract == this.network.baseToken.contract ? -1 : 1))
+    },
   },
 
   methods: {
-    filledPositions() {
-      return this.pairPositions.filter(el => {
-        if (!el.slug.includes(this.search.toLowerCase())) return false
-        if (this.onlyBuy && !el.orderCount.buy) return false
-        if (this.onlySell && !el.orderCount.sell) return false
-        return el
-      })
+    handleExpandChange(row, expanded) {
+      this.expanded = expanded.map(({ id }) => id)
+    },
+
+    handleRowClick(row, _, event) {
+      // Don't trigger on clicking actions
+      if (event.defaultPrevented) return
+
+      if (this.expanded.includes(row.id)) {
+        this.expanded = this.expanded.filter((id) => id != row.id)
+        return
+      }
+
+      this.expanded.push(row.id)
     },
 
     trade(position) {
       this.$router.push({
-        name: 'trade-index-id',
+        name: `trade-index-id___${this.$i18n.locale}`,
         params: {
-          id: position.slug
-        }
+          id: position.slug,
+        },
       })
     },
 
@@ -169,75 +226,95 @@ export default {
         await this.$store.dispatch('chain/cancelorder', {
           account: this.user.name,
           market_id: order.market_id,
-          type: order.type == 'buy' ? 'bid' : 'ask',
-          order_id: order.id
+          type: ['buy', 'bid'].includes(order.type) ? 'buy' : 'sell',
+          order_id: order.id,
         })
+
+        this.$notify({ title: 'Success', message: `Order canceled ${order.id}`, type: 'success' })
       } catch (e) {
         this.$notify({ title: 'Order cancel error', message: e.message, type: 'warning' })
       }
-
-      this.$notify({ title: 'Success', message: `Order canceled ${order.id}`, type: 'success' })
     },
 
     async cancelAll({ orders }) {
-      await this.$store.dispatch('market/cancelAll', orders)
-    }
-  }
+      try {
+        await this.$store.dispatch('market/cancelAll', orders)
+      } catch (e) {
+        this.$notify({ title: 'Order cancel error', message: e.message, type: 'warning' })
+      }
+    },
+  },
 }
 </script>
 
 <style scoped lang="scss">
-.table-header{
+.btn {
+  height: 40px;
+}
+
+.table-header {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 10px;
-  gap: 30px;
+  gap: 16px;
+
   .el-input {
     max-width: 300px;
-    margin-right: 8px;
-    margin-bottom: 8px;
   }
-  .el-input__inner{
+
+  .el-input__inner {
     background: transparent !important;
   }
 }
-td.el-table__expanded-cell{
+
+td.el-table__expanded-cell {
   background: var(--bg-alter-2) !important;
 }
-.el-card{
+
+.el-card {
   border: none;
+  border-radius: 8px;
 }
-.asset-container{
+
+.asset-container {
   display: flex;
   align-items: center;
-  .asset{
+
+  .asset {
     display: flex;
     flex-direction: column;
     margin-left: 10px;
   }
-  .asset-name{
+
+  .asset-name {
     font-weight: bold;
   }
 }
-.el-table__expanded-cell{
+
+.el-table__expanded-cell {
   padding: 10px !important;
 }
-.order-type{
-  &.green{
+
+.order-type {
+  &.green {
     color: var(--main-green);
   }
-  &.red{
+
+  &.red {
     color: var(--main-red);
   }
 }
-.actions{
+
+.actions {
   display: flex;
-  .el-button{
-    &.red{
+
+  .el-button {
+    &.red {
       color: var(--main-red) !important;
     }
-    &.green{
+
+    &.green {
       color: var(--main-green) !important;
     }
   }

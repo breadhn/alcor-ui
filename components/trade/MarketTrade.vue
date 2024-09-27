@@ -2,18 +2,19 @@
 .row
   .col-lg-6
     .d-flex.mb-1
-      small.text-success Buy {{ quote_token.symbol.name }}
+      small.green {{ $t('Buy') }} {{ quote_token.symbol.name }}
       span(
         @click="setAmount('buy')"
         class="text-mutted small align-self-end ml-auto cursor-pointer"
-      ) {{ baseBalance | commaFloat }}
+      ) {{ baseBalance | commaFloat(base_token.symbol.precision) }}
         i.el-icon-wallet.ml-1
 
     el-form
       el-form-item
         el-input(
           type="number"
-          placeholder="Buy at best price"
+          inputmode="decimal"
+          :placeholder="$t('Buy at best price')"
           size="medium"
           disabled
         )
@@ -22,21 +23,22 @@
       el-form-item
         el-input(
           type="number"
+          inputmode="decimal"
           v-model="totalBuy"
-          @change="setPrecisionTotalBuy()"
           size="medium"
           placeholder="0"
           clearable
         )
-          span(slot="prefix").mr-1 AMOUNT
+          span(slot="prefix").mr-1 {{ $t('AMOUNT') }}
           span(slot="suffix").mr-1 {{ base_token.symbol.name }}
 
       .px-3
         el-slider(
           :step="1"
-          v-model="percentBuy"
-          :marks="{0: '0%', 25: '25%', 50: '50%', 75: '75%', 100: '100%'}"
-        )
+          v-model="percentBuy2"
+          :marks="{ 0: '0%', 25: '25%', 50: '50%', 75: '75%', 100: '100%' }"
+          :show-tooltip="false"
+        ).slider-buy
 
       el-form-item.mt-5
         el-button(
@@ -44,22 +46,22 @@
           type="success"
           size="small"
           @click="actionOrder('market', 'buy')"
-        ) Buy {{ quote_token.str }}
+        ) {{ $t('Buy') }} {{ quote_token.str }}
 
   .col-lg-6
     .d-flex.mb-1
-      small.text-danger Sell {{ quote_token.symbol.name }}
+      small.red {{ $t('Sell') }} {{ quote_token.symbol.name }}
       span(
         class="text-mutted small align-self-end ml-auto cursor-pointer"
         @click="setAmount('sell')"
-      ) {{ tokenBalance | commaFloat }}
+      ) {{ tokenBalance | commaFloat(quote_token.symbol.precision) }}
         i.el-icon-wallet.ml-1
 
     el-form
       el-form-item
         el-input(
           type="number"
-          placeholder="Sell at best price"
+          :placeholder="$t('Sell at best price')"
           size="medium"
           disabled
         )
@@ -69,20 +71,20 @@
         el-input(
           type="number"
           v-model="amountSell"
-          @change="setPrecisionAmountSell()"
           size="medium"
           placeholder="0"
           clearable
         )
-          span(slot="prefix").mr-1 AMOUNT
+          span(slot="prefix").mr-1 {{ $t('AMOUNT') }}
           span(slot="suffix").mr-1 {{ quote_token.symbol.name }}
 
       .px-3
         el-slider(
           :step="1"
           v-model="percentSell"
-          :marks="{0: '0%', 25: '25%', 50: '50%', 75: '75%', 100: '100%'}"
-        )
+          :marks="{ 0: '0%', 25: '25%', 50: '50%', 75: '75%', 100: '100%' }"
+          :show-tooltip="false"
+        ).slider-sell
 
       el-form-item.mt-5
         el-button(
@@ -90,7 +92,7 @@
           type="danger"
           size="small"
           @click="actionOrder('market', 'sell')"
-        ) Sell {{ quote_token.str }}
+        ) {{ $t('Sell') }} {{ quote_token.str }}
 </template>
 
 <script>
@@ -100,10 +102,24 @@ import { trade } from '~/mixins/trade'
 export default {
   mixins: [trade],
 
+  data() {
+    return {
+      percentBuyLocal: 0
+    }
+  },
+
   computed: {
-    percentBuy: {
-      get() { return this.percent_buy },
-      set(val) { this.changePercentBuy({ percent: val, trade: 'market' }) }
+    percentBuy2: {
+      get() { return this.percentBuyLocal },
+      set(val) {
+        this.percentBuyLocal = val
+
+        if (val == 100) {
+          this.$store.commit('market/SET_TOTAL_BUY', parseFloat(this.baseBalance))
+        } else {
+          this.changePercentBuy({ percent: val })
+        }
+      }
     }
   }
 }
@@ -112,5 +128,13 @@ export default {
 <style scoped lang="scss">
 .cursor-pointer {
   cursor: pointer;
+}
+
+.green {
+  color: var(--color-primary)
+}
+
+.red {
+  color: var(--main-red)
 }
 </style>
